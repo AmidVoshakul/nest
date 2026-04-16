@@ -1,6 +1,7 @@
 //! Nest - Secure hypervisor for autonomous AI agents
 
 use clap::Parser;
+use nest_runtime::AgentRuntime;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -35,6 +36,30 @@ enum Commands {
         #[arg(short, long, default_value_t = 20)]
         lines: usize,
     },
+
+    /// Manage permissions
+    Permissions {
+        #[command(subcommand)]
+        command: PermissionCommands,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum PermissionCommands {
+    /// List pending permission requests
+    List,
+
+    /// Approve a pending permission request
+    Approve {
+        /// Index of the request to approve
+        index: usize,
+    },
+
+    /// Deny a pending permission request
+    Deny {
+        /// Index of the request to deny
+        index: usize,
+    },
 }
 
 #[tokio::main]
@@ -44,6 +69,13 @@ async fn main() -> anyhow::Result<()> {
     match &cli.command {
         Commands::Start => {
             println!("Starting Nest hypervisor...");
+            let mut runtime = AgentRuntime::new();
+            
+            // Register example Researcher Hand
+            runtime.register_agent("researcher-hand");
+            println!("✅ Registered Researcher Hand agent");
+            
+            runtime.run().await?;
         }
         Commands::Stop => {
             println!("Stopping Nest hypervisor...");
@@ -62,6 +94,19 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Log { lines } => {
             println!("Last {} log entries:", lines);
+        }
+        Commands::Permissions { command } => {
+            match command {
+                PermissionCommands::List => {
+                    println!("Pending permission requests:");
+                }
+                PermissionCommands::Approve { index } => {
+                    println!("Approving permission request {}", index);
+                }
+                PermissionCommands::Deny { index } => {
+                    println!("Denying permission request {}", index);
+                }
+            }
         }
     }
 

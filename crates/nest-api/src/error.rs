@@ -35,4 +35,10 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Sandbox(e.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;

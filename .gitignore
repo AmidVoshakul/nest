@@ -1,0 +1,35 @@
+# Rust
+target/
+Cargo.lock
+
+# Configuration
+config.toml
+*.toml.local
+
+# Agents
+.agents/
+.hands/
+
+# Logs
+*.log
+audit.log
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.opencode/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib

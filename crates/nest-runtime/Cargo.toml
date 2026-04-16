@@ -1,0 +1,17 @@
+[package]
+name = "nest-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nest-api.workspace = true
+nest-messaging.workspace = true
+nest-permissions.workspace = true
+nest-tools.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+toml = "1.1.2"
+anyhow = "1.0.102"
+serde = { workspace = true, features = ["derive"] }
