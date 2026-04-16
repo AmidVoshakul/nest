@@ -1,225 +1,128 @@
-# Nest - Полное руководство по архитектуре и использованию
+# Nest Architecture
 
-## 📋 Общие сведения
+## C4 Model Diagrams
 
-Nest это **безопасный гипервизор для автономных AI агентов**. Это операционная система уровня пользователя которая запускает недоверенные AI агенты в изолированных песочницах с гранулярным контролем разрешений.
+### Level 1: System Context
 
----
+```mermaid
+C4Context
+    title Nest Hypervisor - System Context
 
-## 🧱 Архитектура ядра
-
-### Уровень 0: Ядро гипервизора
-Все агентские операции проходят через 4 фундаментальные слои:
-
-| Слой | Ответственность |
-|---|---|
-| 🛡️ **Песочница** | Изоляция процессов через Linux namespaces, pivot_root, seccomp-bpf. Агент физически не может выйти за пределы своей среды. |
-| 🔒 **Permission Engine** | Deny-by-default система разрешений. Все запрещено если не разрешено явно. |
-| 📜 **Аудит Лог** | Неизменяемый append-only журнал с цепочкой хешей. Невозможно подделать или удалить любую запись. |
-| 📨 **Шина сообщений** | Единственный способ коммуникации между агентами. Нет общей памяти, нет прямых вызовов. |
-
----
-
-## ⚙️ Конфигурация и запуск
-
-### 1. Запуск гипервизора
-```bash
-# Запустить в фоновом режиме
-nest start
-
-# Проверить статус
-nest status
-
-# Остановить
-nest stop
+    Person(user, "User", "Person using Nest")
+    System_Ext(llm, "LLM Provider", "Anthropic, OpenAI, OpenRouter")
+    System_Ext(tools, "MCP Tools", "External MCP tool servers")
+    System(nest, "Nest Hypervisor", "Secure agent execution environment")
+    
+    Rel(user, nest, "Submits tasks")
+    Rel(nest, llm, "Uses for reasoning")
+    Rel(nest, tools, "Uses for actions")
 ```
 
-### 2. Настройка конфигурации
-Конфиг располагается по умолчанию в `~/.config/nest/config.toml`
+### Level 2: Container Diagram
 
-```toml
-[security]
-default_permission = "deny"
-auto_approve_read = false
-auto_approve_network = false
+```mermaid
+C4Container
+    title Nest Hypervisor - Container Diagram
 
-[audit]
-enabled = true
-log_path = "~/.local/share/nest/audit.log"
+    Person(user, "User")
+    
+    System_Boundary(nest, "Nest Hypervisor") {
+        Container(runtime, "Agent Runtime", "Rust", "Main execution loop and scheduler")
+        Container(perm, "Permission Engine", "Rust", "Deny-by-default permission checks")
+        Container(audit, "Audit Log", "Rust", "Immutable Merkle chain log")
+        Container(bus, "Message Bus", "Rust", "Inter-agent communication")
+        Container(mcp, "MCP Proxy", "Rust", "Tool execution proxy")
+        Container(sandbox, "Sandbox Manager", "Rust", "Linux namespace manager")
+        
+        ContainerDb(db, "State Store", "SQLite", "Persistent state storage")
+    }
+    
+    System_Ext(llm, "LLM Provider")
+    System_Ext(tools, "MCP Tools")
 
-[sandbox]
-default_memory_limit = "1G"
-default_cpu_limit = 50
-enable_seccomp = true
-enable_cgroups = true
-
-[mcp]
-enabled = true
-auto_discover = true
-servers = [
-    "npx -y @modelcontextprotocol/server-filesystem ~/Projects/",
-    "uvx mcp-server-time",
-    "npx -y mcp-searxng"
-]
+    Rel(user, runtime, "CLI / HTTP")
+    Rel(runtime, perm, "Checks permissions")
+    Rel(runtime, bus, "Routes messages")
+    Rel(runtime, mcp, "Executes tools")
+    Rel(runtime, sandbox, "Spawns agents")
+    Rel(runtime, audit, "Logs all actions")
+    Rel(mcp, tools, "MCP protocol")
+    Rel(runtime, llm, "LLM API")
+    Rel(runtime, db, "Persists state")
 ```
 
----
+### Level 3: Component Diagram
 
-## 🔌 Интеграция с MCP сервисами
+```mermaid
+C4Component
+    title Nest Runtime - Component Diagram
 
-Nest полностью совместим с **Model Context Protocol (MCP)**. Любой MCP сервер автоматически становится доступным всем агентам, но только после явного разрешения.
-
-### Добавление нового MCP сервера
-Добавьте строку в конфиг или используйте CLI:
-```bash
-nest mcp add "npx -y @modelcontextprotocol/server-github"
-nest mcp enable github
+    Container_Boundary(runtime, "Agent Runtime") {
+        Component(scheduler, "Task Scheduler", "Cron parser, job queue")
+        Component(hand_manager, "Hand Manager", "Hand lifecycle management")
+        Component(think_cycle, "Think Cycle Executor", "LLM + Tools execution loop")
+        Component(perm_router, "Permission Router", "Routes approval requests")
+    }
+    
+    Component(perm, "Permission Engine")
+    Component(audit, "Audit Log")
+    Component(mcp, "MCP Proxy")
+    Component(sandbox, "Sandbox Manager")
+    
+    Rel(scheduler, hand_manager, "Dispatches scheduled tasks")
+    Rel(hand_manager, think_cycle, "Runs think cycles")
+    Rel(think_cycle, mcp, "Calls tools")
+    Rel(think_cycle, perm, "Checks permissions")
+    Rel(think_cycle, audit, "Logs decisions")
+    Rel(hand_manager, sandbox, "Spawns agent processes")
 ```
 
-### Список поддерживаемых интеграций
-✅ Все официальные MCP серверы работают из коробки:
-- 📂 Файловая система
-- 🌐 Веб поиск (SearXNG, DuckDuckGo)
-- 📧 Email
-- 🐙 GitHub
-- 📊 Google Sheets
-- 💬 Telegram, Discord, Slack
-- 📅 Google Calendar
-- И сотни других...
+## Core Data Flow
 
----
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as Runtime
+    participant H as Hand Agent
+    participant P as Permission Engine
+    participant M as MCP Proxy
+    participant T as MCP Tool
+    participant A as Audit Log
 
-## 🤖 Система агентов и суб-агентов
-
-### Как это работает
-Nest реализует **модель иерархии агентов** точно так же как люди работают:
-
-```
-Пользователь
-    └── Главный агент
-        ├── Researcher Hand (исследует темы)
-        ├── Developer Hand (пишет код)
-        ├── Sysadmin Hand (управляет сервером)
-        └── Content Creator Hand (пишет статьи)
-```
-
-Каждый агент:
-- ✅ Имеет собственный отдельный набор разрешений
-- ✅ Запускается в собственной изолированной песочнице
-- ✅ Не может получить доступ к ресурсам других агентов
-- ✅ Может делегировать задачи своим суб-агентам
-- ✅ Всегда запрашивает разрешение перед любым действием
-
-### Запуск агента
-```bash
-# Запустить Researcher Hand с темой "AI безопасность 2026"
-nest run researcher "AI безопасность 2026"
-
-# Список запущенных агентов
-nest agents list
-
-# Остановить агент
-nest agents stop researcher-hand
+    U->>R: Submit task
+    R->>H: Add to task queue
+    R->>H: Run think cycle
+    H->>R: Request tool call
+    R->>P: Check permission
+    alt Permission granted
+        P->>R: Allow
+        R->>M: Execute tool
+        M->>T: MCP Call
+        T->>M: Result
+        M->>H: Tool result
+    else Permission required
+        P->>R: Pending
+        R->>U: Request approval
+        U->>R: Approve
+        R->>M: Execute tool
+    end
+    H->>R: Task complete
+    R->>A: Log action
+    R->>U: Return result
 ```
 
----
+## Design Principles
 
-## 🛠️ База доступных инструментов
+1. **Security First**: Every operation goes through permission check
+2. **Isolation**: No shared memory between agents
+3. **Auditability**: Every action is permanently logged
+4. **Simplicity**: Minimal API surface, no magic
+5. **Composability**: Components work independently
 
-Все инструменты автоматически обнаруживаются из MCP серверов. На данный момент доступно более 300+ инструментов включая:
+## Security Guarantees
 
-| Категория | Инструменты |
-|---|---|
-| 📂 Файлы | Чтение, запись, поиск, редактирование |
-| 🌐 Сеть | Поиск, запросы, загрузка файлов |
-| 🔧 Система | Запуск команд, управление процессами |
-| 🗂️ Git | Все git операции |
-| 💬 Мессенджеры | Telegram, Discord, Slack |
-| 📅 Сервисы | Google, GitHub, Jira, и т.д. |
-
-### Делегирование инструментов
-Агент может делегировать доступ к инструменту своему суб-агенту:
-```
-Главный агент имеет разрешение на запись в папку ./src
-    ↳ Может дать доступ к этому разрешению Developer Hand
-        ↳ Developer Hand не может получить доступ к чему либо другому
-```
-
----
-
-## 🔐 Система разрешений
-
-Это самая важная и уникальная часть Nest. Ни один другой проект не имеет такой системы безопасности.
-
-### Уровни разрешений
-1.  **❌ Запрещено по умолчанию** - абсолютно все действия запрещены
-2.  **⏳ Требует подтверждения** - агент остановится и будет ждать твоего ответа
-3.  **✅ Разрешено** - агент может выполнять действие без подтверждения
-
-### Типы разрешений
-| Разрешение | Описание |
-|---|---|
-| `file_read` | Чтение конкретного файла или каталога |
-| `file_write` | Запись в конкретный файл или каталог |
-| `command_execute` | Запуск конкретной команды |
-| `network_access` | Доступ к сети |
-| `network_domain` | Доступ к конкретному домену |
-| `agent_communicate` | Отправка сообщений другому агенту |
-
-### Управление разрешениями
-```bash
-# Список ожидающих подтверждения запросов
-nest permissions list
-
-# Разрешить запрос #5
-nest permissions approve 5
-
-# Отклонить запрос #3
-nest permissions deny 3
-
-# Постоянно разрешить агенту доступ к папке ./src
-nest permissions grant researcher-hand file_read ./src
-```
-
----
-
-## ⏰ Планировщик и запуск по времени
-
-Агенты могут работать полностью автономно по расписанию:
-
-```bash
-# Запустить Researcher Hand каждый час
-nest schedule add researcher-hand "0 * * * *" "AI безопасность 2026"
-
-# Запустить бэкап агент каждый день в 3 часа ночи
-nest schedule add backup-hand "0 3 * * *"
-
-# Список запланированных задач
-nest schedule list
-```
-
----
-
-## 🛡️ Гарантии безопасности
-
-Вот что это значит на практике:
-✅ **Агент не может удалить твой домашний каталог** - физически не может выйти из песочницы
-✅ **Агент не может отправить твои данные куда либо** - все сетевые вызовы проходят через белый список
-✅ **Агент не может скрыть что он сделал** - абсолютно все действия записываются в неизменяемый журнал
-✅ **Ты всегда можешь откатить любое действие** - полный аудит и логирование всех шагов
-✅ **Нет сюрпризов** - агент никогда не сделает что-либо без твоего явного разрешения
-
-Это первый и единственный на данный момент агентский рантайм который гарантирует безопасность по умолчанию.
-
----
-
-## 🚀 Следующие шаги
-
-1.  ✅ Ядро гипервизора готово
-2.  ✅ Система разрешений работает
-3.  ✅ Песочница реализована
-4.  ⏳ Следующий шаг: Полная интеграция MCP протокола
-5.  ⏳ Следующий шаг: Первый рабочий Researcher Hand агент
-6.  ⏳ Следующий шаг: Планировщик заданий
-
-Хочешь мы приступим к интеграции MCP протокола?
+- ✅ Agents cannot escape sandboxes
+- ✅ No implicit permissions for any operation
+- ✅ All network access is filtered
+- ✅ Audit log cannot be modified or deleted
+- ✅ Resource limits are enforced at kernel level
