@@ -77,6 +77,7 @@ pub struct Hand {
     llm_registry: LlmRegistry,
     conversation_history: Vec<Message>,
     task_queue: VecDeque<String>,
+    loop_guard: super::LoopGuard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +109,7 @@ impl Hand {
             llm_registry,
             conversation_history: Vec::new(),
             task_queue: VecDeque::new(),
+            loop_guard: super::LoopGuard::new(),
         })
     }
 
@@ -133,6 +135,9 @@ impl Hand {
     }
 
     pub async fn think_cycle(&mut self) -> anyhow::Result<()> {
+        // Reset loop guard at start of each think cycle
+        self.loop_guard.reset();
+        
         // Process pending tasks from queue
         eprintln!("🧠 [{}] Think cycle started, queue size: {}", self.manifest.name, self.task_queue.len());
         
@@ -212,6 +217,29 @@ impl Hand {
             println!("[{}] Executing {} tool calls...", self.manifest.name, response.tool_calls.len());
             
             for call in &response.tool_calls {
+                // Check loop guard
+                match self.loop_guard.check(&call.name, &call.arguments) {
+                    super::LoopGuardVerdict::Allow => {},
+                    super::LoopGuardVerdict::Warn => {
+                        eprintln!("[{}] ⚠️  Warning: Repeated call to tool '{}'", self.manifest.name, call.name);
+                    },
+                    super::LoopGuardVerdict::Block => {
+                        eprintln!("[{}] 🚫 Blocked repeated call to tool '{}'", self.manifest.name, call.name);
+                        self.conversation_history.push(Message {
+                            role: Role::Tool,
+                            content: format!("Error: Tool call blocked due to repeated execution. You seem to be in a loop."),
+                            tool_calls: Vec::new(),
+                            tool_call_id: Some(call.id.clone()),
+                        });
+                        continue;
+                    },
+                    super::LoopGuardVerdict::CircuitBreak => {
+                        eprintln!("[{}] 🚨 Circuit breaker triggered, terminating agent", self.manifest.name);
+                        self.state = HandState::Failed;
+                        break;
+                    }
+                }
+                
                 let result = self.mcp_proxy.call_tool(
                     &self.manifest.name,
                     &call.name,

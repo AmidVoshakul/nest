@@ -13,6 +13,10 @@ pub mod permission;
 pub mod audit;
 pub mod error;
 pub mod scheduler;
+pub mod path;
+pub mod ssrf;
+pub mod subprocess;
+pub mod taint;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AgentState {

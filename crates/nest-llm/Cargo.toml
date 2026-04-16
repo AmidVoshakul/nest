@@ -25,3 +25,6 @@ thiserror = "1.0"
 
 # Environment variables
 dotenvy = "0.15"
+
+# Security
+zeroize = { workspace = true }

@@ -14,6 +14,7 @@
 use std::{collections::HashMap, time::Duration};
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
+use zeroize::{Zeroize, Zeroizing, ZeroizeOnDrop};
 
 #[derive(Error, Debug)]
 pub enum LlmError {
@@ -108,20 +109,28 @@ pub struct Usage {
     pub total_tokens: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Zeroize, ZeroizeOnDrop, Debug)]
 pub struct LlmClient {
+    #[zeroize(skip)]
     provider: Provider,
-    api_key: String,
+    api_key: Zeroizing<String>,
+    #[zeroize(skip)]
     base_url: String,
+    #[zeroize(skip)]
     client: reqwest::Client,
     
     // Rate limiting
+    #[zeroize(skip)]
     rate_limit: Option<Duration>,
+    #[zeroize(skip)]
     last_request: Option<std::time::Instant>,
     
     // Token budgeting
+    #[zeroize(skip)]
     token_budget: u32,
+    #[zeroize(skip)]
     tokens_used: u32,
+    #[zeroize(skip)]
     budget_window_start: std::time::Instant,
 }
 
@@ -150,7 +159,7 @@ impl LlmClient {
 
         Ok(Self {
             provider,
-            api_key,
+            api_key: Zeroizing::new(api_key),
             base_url,
             client,
             rate_limit: None,
@@ -247,7 +256,7 @@ impl LlmClient {
         }
 
         let resp = self.client.post(format!("{}/messages", self.base_url))
-            .header("x-api-key", &self.api_key)
+            .header("x-api-key", &*self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .json(&body)
@@ -336,7 +345,7 @@ impl LlmClient {
         eprintln!("📤 Request body (first 500 chars): {}", &body_str[..std::cmp::min(500, body_str.len())]);
 
         let resp = self.client.post(format!("{}/chat/completions", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Authorization", format!("Bearer {}", &*self.api_key))
             .header("Content-Type", "application/json")
             .header("HTTP-Referer", "https://github.com/anomalyco/nest")
             .header("X-Title", "Nest Agent Hypervisor")

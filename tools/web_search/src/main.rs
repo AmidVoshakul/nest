@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use nest_api::ssrf::validate_url;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MCPRequest {
@@ -259,7 +260,10 @@ fn parse_ddg_results(html: &str, max: usize) -> Vec<(String, String, String)> {
         };
 
         if !title.is_empty() && !actual_url.is_empty() {
-            results.push((title, actual_url, snippet));
+            // Validate URL before including in results
+            if validate_url(&actual_url).is_ok() {
+                results.push((title, actual_url, snippet));
+            }
         }
     }
 

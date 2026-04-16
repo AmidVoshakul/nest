@@ -5,6 +5,7 @@
 
 use nest_api::permission::{Permission, PermissionResult};
 use std::collections::{HashMap, HashSet};
+use wildmatch::WildMatch;
 
 #[derive(Debug, Default, Clone)]
 pub struct PermissionEngine {
@@ -37,18 +38,36 @@ impl PermissionEngine {
         resource: Option<&str>,
     ) -> PermissionResult {
         // Default deny policy
-        let key = (permission, resource.map(|s| s.to_string()));
+        let grants = match self.grants.get(agent_id) {
+            Some(g) => g,
+            None => return PermissionResult::NeedsApproval,
+        };
 
-        if self
-            .grants
-            .get(agent_id)
-            .map(|g| g.contains(&key))
-            .unwrap_or(false)
-        {
-            PermissionResult::Allowed
-        } else {
-            PermissionResult::NeedsApproval
+        // Check for exact match first
+        let exact_key = (permission, resource.map(|s| s.to_string()));
+        if grants.contains(&exact_key) {
+            return PermissionResult::Allowed;
         }
+
+        // Check for glob pattern matches if resource is provided
+        if let Some(resource) = resource {
+            for (grant_perm, grant_resource) in grants {
+                if *grant_perm != permission {
+                    continue;
+                }
+
+                if let Some(pattern) = grant_resource {
+                    if WildMatch::new(pattern).matches(resource) {
+                        return PermissionResult::Allowed;
+                    }
+                } else {
+                    // Grant with no resource means allow all
+                    return PermissionResult::Allowed;
+                }
+            }
+        }
+
+        PermissionResult::NeedsApproval
     }
 
     /// Grant a permission to an agent
@@ -94,5 +113,82 @@ impl PermissionEngine {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nest_api::permission::Permission;
+
+    #[test]
+    fn test_permission_exact_match() {
+        let mut engine = PermissionEngine::new();
+        engine.grant("test-agent", Permission::FileRead, Some("/data/test.txt"));
+
+        assert_eq!(
+            engine.check("test-agent", Permission::FileRead, Some("/data/test.txt")),
+            PermissionResult::Allowed
+        );
+    }
+
+    #[test]
+    fn test_permission_glob_match() {
+        let mut engine = PermissionEngine::new();
+        engine.grant("test-agent", Permission::FileRead, Some("/data/*.txt"));
+
+        assert_eq!(
+            engine.check("test-agent", Permission::FileRead, Some("/data/test.txt")),
+            PermissionResult::Allowed
+        );
+
+        assert_eq!(
+            engine.check("test-agent", Permission::FileRead, Some("/data/other.txt")),
+            PermissionResult::Allowed
+        );
+
+        assert_eq!(
+            engine.check("test-agent", Permission::FileRead, Some("/other/test.txt")),
+            PermissionResult::NeedsApproval
+        );
+    }
+
+    #[test]
+    fn test_permission_wildcard_domain() {
+        let mut engine = PermissionEngine::new();
+        engine.grant(
+            "test-agent",
+            Permission::NetworkDomain,
+            Some("*.openai.com:443"),
+        );
+
+        assert_eq!(
+            engine.check(
+                "test-agent",
+                Permission::NetworkDomain,
+                Some("api.openai.com:443")
+            ),
+            PermissionResult::Allowed
+        );
+
+        assert_eq!(
+            engine.check(
+                "test-agent",
+                Permission::NetworkDomain,
+                Some("other.com:443")
+            ),
+            PermissionResult::NeedsApproval
+        );
+    }
+
+    #[test]
+    fn test_permission_all_grant() {
+        let mut engine = PermissionEngine::new();
+        engine.grant("test-agent", Permission::FileRead, None);
+
+        assert_eq!(
+            engine.check("test-agent", Permission::FileRead, Some("/any/path.txt")),
+            PermissionResult::Allowed
+        );
     }
 }

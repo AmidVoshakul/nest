@@ -5,8 +5,10 @@
 //! environment with no access to host resources unless explicitly granted.
 
 mod sandbox;
+pub mod metering;
 
 use std::path::PathBuf;
+pub use metering::{DualMeter, MeteringConfig};
 
 pub use sandbox::Sandbox;
 
@@ -32,6 +34,9 @@ pub struct SandboxConfig {
 
     /// Allow network access at all
     pub network_allowed: bool,
+    
+    /// Dual metering configuration
+    pub metering: MeteringConfig,
 }
 
 impl Default for SandboxConfig {
@@ -44,6 +49,7 @@ impl Default for SandboxConfig {
             allowed_domains: Vec::new(),
             max_processes: 10,
             network_allowed: false,
+            metering: MeteringConfig::default(),
         }
     }
 }
