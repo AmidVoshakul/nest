@@ -1,5 +1,7 @@
 //! Nest - Secure hypervisor for autonomous AI agents
 
+mod banner;
+
 use clap::Parser;
 use nest_runtime::AgentRuntime;
 
@@ -93,6 +95,7 @@ enum PermissionCommands {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     load_env();
+    banner::print_banner();
     let cli = Cli::parse();
 
     match &cli.command {
