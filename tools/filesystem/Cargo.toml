@@ -1,0 +1,13 @@
+[package]
+name = "nest-tool-filesystem"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "io-util", "net", "fs", "io-std"] }
+anyhow = "1.0"
+walkdir = "2"

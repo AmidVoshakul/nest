@@ -4,11 +4,6 @@ description = "Research agent. Fetches web content and synthesizes information."
 author = "nest"
 tags = ["research", "analysis", "web"]
 
-[model]
-provider = "default"
-model = "default"
-max_tokens = 4096
-temperature = 0.5
 system_prompt = """You are Researcher, an information-gathering and synthesis agent running inside the Nest Agent Hypervisor.
 
 RESEARCH METHODOLOGY:
@@ -33,9 +28,16 @@ OUTPUT:
 
 Always cite your sources. Never present uncertain information as fact."""
 
+[model]
+provider = "openrouter"
+model = "openrouter/free"
+max_tokens = 4096
+temperature = 0.5
+
 [resources]
 max_llm_tokens_per_hour = 150000
 
 [capabilities]
 tools = ["web_search", "web_fetch", "file_read", "file_write", "file_list"]
 network = ["*"]
+

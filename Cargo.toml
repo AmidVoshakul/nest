@@ -10,7 +10,8 @@ keywords = ["ai", "agent", "sandbox", "security", "hypervisor"]
 categories = ["command-line-utilities", "security", "virtualization"]
 
 [workspace]
-members = ["crates/nest-api", "crates/nest-sandbox", "crates/nest-messaging", "crates/nest-audit", "crates/nest-permissions", "crates/nest-tools", "crates/nest-runtime"]
+members = ["crates/nest-api", "crates/nest-sandbox", "crates/nest-messaging", "crates/nest-audit", "crates/nest-permissions", "crates/nest-tools", "crates/nest-runtime", "crates/nest-llm"]
+exclude = ["tools/*"]
 resolver = "2"
 
 [workspace.package]
@@ -27,6 +28,7 @@ nest-audit = { path = "crates/nest-audit", version = "0.1.0" }
 nest-permissions = { path = "crates/nest-permissions", version = "0.1.0" }
 nest-tools = { path = "crates/nest-tools", version = "0.1.0" }
 nest-runtime = { path = "crates/nest-runtime", version = "0.1.0" }
+nest-llm = { path = "crates/nest-llm", version = "0.1.0" }
 
 # Async runtime
 tokio = { version = "1.50", default-features = false, features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync", "process", "fs", "signal"] }
@@ -50,6 +52,8 @@ serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 anyhow = "1.0"
+dotenvy = "0.15"
+libc = "0.2"
 nest-runtime = { version = "0.1.0", path = "crates/nest-runtime" }
 nest-tools = { version = "0.1.0", path = "crates/nest-tools" }
 

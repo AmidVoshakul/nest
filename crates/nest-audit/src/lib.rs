@@ -31,6 +31,7 @@ pub struct AuditEntry {
 
 pub struct AuditLog {
     file: BufWriter<File>,
+    #[allow(dead_code)]
     path: PathBuf,
     last_hash: [u8; 32],
     entry_count: u64,
@@ -76,15 +77,15 @@ impl AuditLog {
 
         // Calculate hash for this entry
         let mut hasher = Sha256::new();
-        hasher.update(&entry.index.to_le_bytes());
-        hasher.update(&entry.timestamp.to_le_bytes());
+        hasher.update(entry.index.to_le_bytes());
+        hasher.update(entry.timestamp.to_le_bytes());
         hasher.update(entry.agent_id.as_bytes());
         hasher.update(entry.action.as_bytes());
         if let Some(r) = &entry.resource {
             hasher.update(r.as_bytes());
         }
-        hasher.update(&[entry.result as u8]);
-        hasher.update(&entry.prev_hash);
+        hasher.update([entry.result as u8]);
+        hasher.update(entry.prev_hash);
 
         entry.hash = hasher.finalize().into();
 

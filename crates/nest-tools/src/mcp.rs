@@ -29,8 +29,8 @@ pub struct MCPServer {
 pub struct MCPClient {
     permission_engine: PermissionEngine,
     servers: Vec<MCPServer>,
+    running_servers: Vec<tokio::process::Child>,
     tx: mpsc::Sender<MCPRequest>,
-    rx: mpsc::Receiver<MCPRequest>,
 }
 
 #[derive(Debug)]
@@ -54,12 +54,12 @@ enum MCPResponse {
 impl MCPClient {
     /// Create a new MCP client
     pub fn new(permission_engine: PermissionEngine) -> Self {
-        let (tx, rx) = mpsc::channel(100);
+        let (tx, _) = mpsc::channel(100);
         Self {
             permission_engine,
             servers: Vec::new(),
+            running_servers: Vec::new(),
             tx,
-            rx,
         }
     }
 
@@ -74,6 +74,9 @@ impl MCPClient {
 
     /// Start the MCP client background worker
     pub async fn start(&mut self) -> Result<()> {
+        // Auto-discover MCP servers from tools/ directory
+        self.discover_servers().await?;
+        
         // Start all configured MCP servers
         let len = self.servers.len();
         for i in 0..len {
@@ -82,22 +85,49 @@ impl MCPClient {
         Ok(())
     }
 
+    /// Auto-discover MCP servers from tools/ directory
+    async fn discover_servers(&mut self) -> Result<()> {
+        if let Ok(entries) = std::fs::read_dir("./tools") {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let command = format!("cargo run --manifest-path ./tools/{}/Cargo.toml", name);
+                    self.add_server(&name, &command);
+                    println!("✅ Discovered MCP server: {}", name);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Initialize a single MCP server
     async fn initialize_server(&mut self, i: usize) -> Result<()> {
-        let command = self.servers[i].command.clone();
+        let _command = self.servers[i].command.clone();
         let name = self.servers[i].name.clone();
         
+        // Use release binary if available, otherwise cargo run
+        let release_bin = format!("./tools/{}/target/release/nest-tool-{}", name, name);
+        let command = if std::path::Path::new(&release_bin).exists() {
+            release_bin
+        } else {
+            format!("cd tools/{} && cargo run --quiet", name)
+        };
+
         let mut child = Command::new("sh")
             .arg("-c")
             .arg(&command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|e| Error::Sandbox(format!("Failed to start MCP server {}: {}", name, e)))?;
 
         let mut stdin = child.stdin.take().unwrap();
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+        // Give server time to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         // Send initialize request
         let init_request = json!({
@@ -116,11 +146,25 @@ impl MCPClient {
 
         stdin.write_all(serde_json::to_string(&init_request)?.as_bytes()).await?;
         stdin.write_all(b"\n").await?;
+        stdin.flush().await?;
 
-        // Read initialize response
+        // Read initialize response with timeout
         let mut line = String::new();
-        stdout.read_line(&mut line).await?;
-        let response: Value = serde_json::from_str(&line)?;
+        match tokio::time::timeout(tokio::time::Duration::from_secs(30), stdout.read_line(&mut line)).await {
+            Ok(Ok(0)) => {
+                let _ = child.kill().await;
+                return Err(Error::Sandbox(format!("MCP server {} exited prematurely", name)));
+            }
+            Ok(Err(e)) => {
+                let _ = child.kill().await;
+                return Err(Error::Sandbox(format!("Failed to read from MCP server {}: {}", name, e)));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                return Err(Error::Sandbox(format!("MCP server {} initialization timed out", name)));
+            }
+            Ok(Ok(_)) => {}
+        }
 
         // Send tools/list request
         let tools_request = json!({
@@ -131,11 +175,35 @@ impl MCPClient {
 
         stdin.write_all(serde_json::to_string(&tools_request)?.as_bytes()).await?;
         stdin.write_all(b"\n").await?;
+        stdin.flush().await?;
 
-        // Read tools list
+        // We're not killing the child anymore - keep it running
+        // Read tools list before pushing into running_servers
         line.clear();
-        stdout.read_line(&mut line).await?;
-        let tools_response: Value = serde_json::from_str(&line)?;
+        match tokio::time::timeout(tokio::time::Duration::from_secs(30), stdout.read_line(&mut line)).await {
+            Ok(Ok(0)) => {
+                let _ = child.kill().await;
+                return Err(Error::Sandbox(format!("MCP server {} exited while sending tools", name)));
+            }
+            Ok(Err(e)) => {
+                let _ = child.kill().await;
+                return Err(Error::Sandbox(format!("Failed to read tools list from {}: {}", name, e)));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                return Err(Error::Sandbox(format!("MCP server {} tools list timed out", name)));
+            }
+            Ok(Ok(_)) => {}
+        }
+
+        self.running_servers.push(child);
+
+        let tools_response: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(Error::Sandbox(format!("Invalid JSON from MCP server {}: {}", name, e)));
+            }
+        };
 
         if let Some(tools) = tools_response["result"]["tools"].as_array() {
             for tool in tools {
@@ -147,6 +215,9 @@ impl MCPClient {
             }
         }
 
+        // Keep server running for subsequent calls
+        println!("✅ Initialized MCP server: {} ({} tools)", name, self.servers[i].tools.len());
+
         Ok(())
     }
 
@@ -154,18 +225,30 @@ impl MCPClient {
     pub async fn call_tool(&mut self, agent_id: &str, tool_name: &str, params: Value) -> Result<Value> {
         // First check permission for this tool
         let permission = match tool_name {
-            "filesystem_read_file" => nest_api::permission::Permission::FileRead,
-            "filesystem_write_file" => nest_api::permission::Permission::FileWrite,
+            "file_read" | "filesystem_read_file" => nest_api::permission::Permission::FileRead,
+            "file_write" | "filesystem_write_file" => nest_api::permission::Permission::FileWrite,
             "shell_execute" => nest_api::permission::Permission::CommandExecute,
-            "web_fetch" => nest_api::permission::Permission::NetworkAccess,
+            "web_fetch" | "web_search" => nest_api::permission::Permission::NetworkAccess,
             _ => return Err(Error::Sandbox(format!("Unknown tool: {}", tool_name))),
         };
 
         match self.permission_engine.check(agent_id, permission, None) {
             nest_api::permission::PermissionResult::Allowed => {
-                // Permission granted - call the actual MCP tool
-                // Implementation will be completed in next step
-                Ok(json!({"status": "ok"}))
+                // Find the server that has this tool
+                let mut server_index = None;
+                for (i, server) in self.servers.iter().enumerate() {
+                    if server.tools.iter().any(|t| t.name == tool_name) {
+                        server_index = Some(i);
+                        break;
+                    }
+                }
+
+                let server_index = server_index.ok_or_else(|| {
+                    Error::Sandbox(format!("Tool {} not found in any MCP server", tool_name))
+                })?;
+
+                // Execute the tool call
+                self.execute_tool_call(server_index, tool_name, params).await
             }
             nest_api::permission::PermissionResult::NeedsApproval => {
                 // Add to pending requests queue
@@ -185,6 +268,52 @@ impl MCPClient {
                 Err(Error::Sandbox(format!("Permission denied for tool: {}", tool_name)))
             }
         }
+    }
+
+    /// Execute actual tool call against MCP server
+    async fn execute_tool_call(&mut self, server_idx: usize, tool_name: &str, params: Value) -> Result<Value> {
+        let command = self.servers[server_idx].command.clone();
+        
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(&command)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| Error::Sandbox(format!("Failed to start tool server: {}", e)))?;
+
+        let mut stdin = child.stdin.take().unwrap();
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+        // Send tools/call request
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": params
+            }
+        });
+
+        stdin.write_all(serde_json::to_string(&request)?.as_bytes()).await?;
+        stdin.write_all(b"\n").await?;
+
+        // Read response
+        let mut line = String::new();
+        stdout.read_line(&mut line).await?;
+        
+        let response: Value = serde_json::from_str(&line)
+            .map_err(|e| Error::Sandbox(format!("Failed to parse tool response: {}", e)))?;
+
+        // Kill the child process
+        let _ = child.kill().await;
+
+        if let Some(error) = response.get("error") {
+            return Err(Error::Sandbox(format!("Tool error: {}", error)));
+        }
+
+        Ok(response["result"].clone())
     }
 
     /// Get list of all available tools

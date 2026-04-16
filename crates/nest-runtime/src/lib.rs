@@ -3,11 +3,13 @@
 //! Implements the core agent execution loop, scheduler, and lifecycle management.
 
 pub mod hand;
+pub mod scheduler;
 
 pub use hand::{Hand, HandManifest, HandState};
+pub use scheduler::Scheduler;
 
 use nest_api::AgentState;
-use nest_api::error::{Result, Error};
+use nest_api::error::Result;
 use nest_messaging::MessageBus;
 use nest_permissions::PermissionEngine;
 use nest_tools::MCPProxy;
@@ -20,6 +22,7 @@ pub struct AgentRuntime {
     mcp_proxy: MCPProxy,
     agents: HashMap<String, AgentState>,
     hands: HashMap<String, hand::Hand>,
+    scheduler: scheduler::Scheduler,
 }
 
 impl AgentRuntime {
@@ -32,6 +35,7 @@ impl AgentRuntime {
             permission_engine,
             agents: HashMap::new(),
             hands: HashMap::new(),
+            scheduler: scheduler::Scheduler::new(),
         }
     }
 
@@ -59,11 +63,36 @@ impl AgentRuntime {
         Ok(())
     }
 
+    /// Run one tick of the runtime
+    pub async fn tick(&mut self) -> Result<()> {
+        // Check for scheduled tasks that are due
+        let due_tasks = self.scheduler.check_due_tasks();
+        for task in due_tasks {
+            eprintln!("⏰ Scheduled task due: {}", task.id);
+            self.submit_task(&task.hand_name, task.task);
+        }
+        
+        // Run think cycles for all hands
+        for (name, hand) in self.hands.iter_mut() {
+            if let Err(e) = hand.think_cycle().await {
+                eprintln!("[{}] Think cycle error: {}", name, e);
+            }
+        }
+        
+        // Process messages from the bus
+        self.process_messages().await?;
+        
+        // Check for pending permission requests
+        self.check_pending_requests().await?;
+        
+        Ok(())
+    }
+
     /// Start the agent runtime main loop
     pub async fn run(&mut self) -> Result<()> {
         println!("🚀 Starting Nest agent runtime...");
         
-        // Load all hands from default directory
+        // Load all hands FIRST before doing anything else
         let hands_path = std::path::Path::new("./hands");
         if hands_path.exists() {
             if let Err(e) = self.load_hands(hands_path) {
@@ -73,15 +102,16 @@ impl AgentRuntime {
         
         println!("✅ Loaded {} hands", self.hands.len());
         
+        // Start MCP client and discover tools
+        if let Err(e) = self.mcp_proxy.start().await {
+            eprintln!("⚠️  Failed to start MCP client: {}", e);
+        }
+        
         loop {
-            // Process messages from the bus
-            self.process_messages().await?;
-            
-            // Check for pending permission requests
-            self.check_pending_requests().await?;
+            self.tick().await?;
             
             // Small sleep to avoid busy waiting
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
     }
 
@@ -129,6 +159,19 @@ impl AgentRuntime {
     pub fn deny_permission(&mut self, index: usize) -> bool {
         self.mcp_proxy.deny_request(index)
     }
+    
+    /// Submit a task to a hand agent
+    pub fn submit_task(&mut self, hand_name: &str, task: String) -> bool {
+        if let Some(hand) = self.hands.get_mut(hand_name) {
+            eprintln!("✅ [Runtime] Submitting task to {}: {}", hand_name, task);
+            hand.submit_task(task);
+            eprintln!("✅ [Runtime] Task submitted successfully");
+            true
+        } else {
+            eprintln!("❌ [Runtime] Hand {} not found", hand_name);
+            false
+        }
+    }
 
     /// Get pending permission requests
     pub fn pending_permissions(&self) -> &[nest_permissions::PendingRequest] {
@@ -146,5 +189,19 @@ impl AgentRuntime {
         self.message_bus.unregister(agent_id);
         self.agents.remove(agent_id);
     }
+    
+    /// Schedule a new recurring task
+    pub fn schedule_task(&mut self, task: nest_api::scheduler::ScheduledTask) -> Result<()> {
+        self.scheduler.schedule_task(task).map_err(|e| nest_api::error::Error::Unknown(e.to_string()))
+    }
+    
+    /// Unschedule a task
+    pub fn unschedule_task(&mut self, task_id: &str) -> Option<nest_api::scheduler::ScheduledTask> {
+        self.scheduler.unschedule_task(task_id)
+    }
+    
+    /// Get all scheduled tasks
+    pub fn scheduled_tasks(&self) -> &std::collections::HashMap<String, nest_api::scheduler::ScheduledTask> {
+        self.scheduler.tasks()
+    }
 }
-

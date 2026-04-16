@@ -10,8 +10,12 @@ nest-api.workspace = true
 nest-messaging.workspace = true
 nest-permissions.workspace = true
 nest-tools.workspace = true
+nest-llm.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
 toml = "1.1.2"
 anyhow = "1.0.102"
 serde = { workspace = true, features = ["derive"] }
+futures = "0.3"
+cron = "0.12.0"
+chrono = { version = "0.4.38", features = ["serde", "clock"] }

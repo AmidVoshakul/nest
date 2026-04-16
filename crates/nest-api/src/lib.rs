@@ -4,12 +4,15 @@
 //! is built on. No implementations, no heavy dependencies. Every other crate
 //! depends only on this.
 
+#![allow(async_fn_in_trait)]
+
 pub mod agent;
 pub mod sandbox;
 pub mod message;
 pub mod permission;
 pub mod audit;
 pub mod error;
+pub mod scheduler;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AgentState {

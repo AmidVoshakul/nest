@@ -5,10 +5,19 @@ Cargo.lock
 # Configuration
 config.toml
 *.toml.local
+.env
+.env.local
+.env.*.local
+
+# Runtime data
+var/
+sandbox/
+store/
 
 # Agents
 .agents/
 .hands/
+
 
 # Logs
 *.log

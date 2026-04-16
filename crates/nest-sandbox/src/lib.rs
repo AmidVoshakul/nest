@@ -7,7 +7,6 @@
 mod sandbox;
 
 use std::path::PathBuf;
-use nest_api::error::Result;
 
 pub use sandbox::Sandbox;
 

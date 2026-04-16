@@ -7,10 +7,11 @@
 pub mod mcp;
 
 pub use mcp::{MCPClient, MCPServer, MCPTool};
-use nest_api::error::{Result, Error};
+use nest_api::error::Result;
 use nest_permissions::PermissionEngine;
 use serde_json::Value;
 
+#[derive(Debug)]
 pub struct MCPProxy {
     permission_engine: PermissionEngine,
     mcp_client: mcp::MCPClient,
@@ -44,6 +45,11 @@ impl MCPProxy {
     /// Get list of all available tools
     pub fn tools(&self) -> Vec<&MCPTool> {
         self.mcp_client.tools()
+    }
+
+    /// Get list of all available tools as owned values
+    pub fn list_tools(&self) -> Vec<MCPTool> {
+        self.mcp_client.tools().into_iter().cloned().collect()
     }
 
     /// Get pending permission requests

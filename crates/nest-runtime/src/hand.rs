@@ -3,10 +3,11 @@
 //! Implements the production-proven Hand/Agent pattern from OpenFang.
 //! Agents are defined via simple TOML manifests and run in isolated sandboxes.
 
-use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 use nest_tools::MCPProxy;
 use nest_permissions::PermissionEngine;
+use nest_llm::{LlmRegistry, LlmRequest, Message, Role, ToolDefinition};
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HandManifest {
@@ -73,6 +74,9 @@ pub struct Hand {
     permission_engine: PermissionEngine,
     mcp_proxy: MCPProxy,
     state: HandState,
+    llm_registry: LlmRegistry,
+    conversation_history: Vec<Message>,
+    task_queue: VecDeque<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,12 +98,16 @@ impl Hand {
         
         let permission_engine = PermissionEngine::new();
         let mcp_proxy = MCPProxy::new(permission_engine.clone());
+        let llm_registry = LlmRegistry::new();
         
         Ok(Self {
             manifest,
             permission_engine,
             mcp_proxy,
             state: HandState::Stopped,
+            llm_registry,
+            conversation_history: Vec::new(),
+            task_queue: VecDeque::new(),
         })
     }
 
@@ -124,8 +132,106 @@ impl Hand {
         Ok(())
     }
 
-    async fn think_cycle(&mut self) -> anyhow::Result<()> {
-        // TODO: Implement LLM inference and tool calling
+    pub async fn think_cycle(&mut self) -> anyhow::Result<()> {
+        // Process pending tasks from queue
+        eprintln!("🧠 [{}] Think cycle started, queue size: {}", self.manifest.name, self.task_queue.len());
+        
+        if let Some(task) = self.task_queue.pop_front() {
+            eprintln!("\n🔍 [{}] Starting task: {}", self.manifest.name, task);
+            self.conversation_history.push(Message {
+                role: Role::User,
+                content: task,
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            });
+        }
+
+        // Don't run LLM if no conversation history
+        if self.conversation_history.is_empty() {
+            return Ok(());
+        }
+
+        eprintln!("🤖 [{}] Running LLM inference...", self.manifest.name);
+
+        // Get LLM client for this hand
+        let client = self.llm_registry.get_client(
+            &self.manifest.name,
+            &self.manifest.model.provider,
+            self.manifest.resources.max_llm_tokens_per_hour
+        )?;
+
+        // Get available tools from MCP proxy
+        let tools: Vec<ToolDefinition> = self.mcp_proxy
+            .list_tools()
+            .into_iter()
+            .filter(|t| self.manifest.capabilities.tools.contains(&t.name))
+            .map(|t| ToolDefinition {
+                name: t.name,
+                description: t.description,
+                parameters: t.input_schema,
+            })
+            .collect();
+
+        // Use default model if not specified
+        let model = if self.manifest.model.model == "default" {
+            client.default_model().to_string()
+        } else {
+            self.manifest.model.model.clone()
+        };
+
+        // Build request
+        let request = LlmRequest {
+            model,
+            messages: self.conversation_history.clone(),
+            max_tokens: self.manifest.model.max_tokens,
+            temperature: self.manifest.model.temperature,
+            tools,
+            system_prompt: Some(self.manifest.system_prompt.clone()),
+        };
+
+        eprintln!("📤 [{}] Sending request to LLM provider ({} messages)", self.manifest.name, self.conversation_history.len());
+
+        // Execute LLM call
+        let response = client.chat_completion(request).await?;
+        
+        eprintln!("📥 [{}] Got LLM response, usage: {} tokens", self.manifest.name, response.usage.total_tokens);
+
+        // Process response
+        if let Some(content) = &response.content {
+            println!("[{}] Response: {}", self.manifest.name, content);
+            self.conversation_history.push(Message {
+                role: Role::Assistant,
+                content: content.clone(),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            });
+        }
+
+        // Execute tool calls sequentially for now
+        if !response.tool_calls.is_empty() {
+            println!("[{}] Executing {} tool calls...", self.manifest.name, response.tool_calls.len());
+            
+            for call in &response.tool_calls {
+                let result = self.mcp_proxy.call_tool(
+                    &self.manifest.name,
+                    &call.name,
+                    call.arguments.clone()
+                ).await;
+
+                let content = match result {
+                    Ok(v) => serde_json::to_string(&v).unwrap_or_else(|_| "Error serializing result".into()),
+                    Err(e) => format!("Error: {}", e),
+                };
+
+                self.conversation_history.push(Message {
+                    role: Role::Tool,
+                    content,
+                    tool_calls: Vec::new(),
+                    tool_call_id: Some(call.id.clone()),
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -137,5 +243,11 @@ impl Hand {
     /// Get the manifest
     pub fn manifest(&self) -> &HandManifest {
         &self.manifest
+    }
+
+    /// Submit a new task to this hand
+    pub fn submit_task(&mut self, task: String) {
+        eprintln!("[{}] New task queued: {}", self.manifest.name, task);
+        self.task_queue.push_back(task);
     }
 }
