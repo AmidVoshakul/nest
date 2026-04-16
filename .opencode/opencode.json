@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "Project uses pre-configured skill library. Run /init first to scan project and create AGENTS.md.",
+    "After /init, use skill(name='skill-refiner') to analyze project and keep only relevant skills."
+  ],
+  "mcp": {
+    "chrome-devtools": { "enabled": true },
+    "context7": { "enabled": true },
+    "fetch": { "enabled": true },
+    "filesystem": { "enabled": true },
+    "playwright_mcp": { "enabled": true },
+    "searxng": { "enabled": true },
+    "sequential-thinking": { "enabled": true },
+    "time": { "enabled": true }
+  },
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
+  }
+}

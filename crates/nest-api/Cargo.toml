@@ -1,0 +1,13 @@
+[package]
+name = "nest-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Core API traits for Nest hypervisor"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }

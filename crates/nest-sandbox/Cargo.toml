@@ -1,0 +1,12 @@
+[package]
+name = "nest-sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Process sandbox implementation for Nest hypervisor"
+
+[dependencies]
+nest-api.workspace = true
+tokio = { workspace = true, features = ["process"] }
+libc = "0.2"

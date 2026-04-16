@@ -1,0 +1,54 @@
+[package]
+name = "nest"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "MIT OR Apache-2.0"
+description = "Secure hypervisor for autonomous AI agents"
+repository = "https://github.com/AmidVoshakul/nest"
+keywords = ["ai", "agent", "sandbox", "security", "hypervisor"]
+categories = ["command-line-utilities", "security", "virtualization"]
+
+[workspace]
+members = ["crates/nest-api", "crates/nest-sandbox", "crates/nest-messaging", "crates/nest-audit", "crates/nest-permissions"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.87"
+
+[workspace.dependencies]
+nest-api = { path = "crates/nest-api", version = "0.1.0" }
+nest-sandbox = { path = "crates/nest-sandbox", version = "0.1.0" }
+nest-messaging = { path = "crates/nest-messaging", version = "0.1.0" }
+nest-audit = { path = "crates/nest-audit", version = "0.1.0" }
+nest-permissions = { path = "crates/nest-permissions", version = "0.1.0" }
+
+# Async runtime
+tokio = { version = "1.50", default-features = false, features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync", "process", "fs", "signal"] }
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+[dependencies]
+nest-api.workspace = true
+nest-sandbox.workspace = true
+nest-messaging.workspace = true
+nest-audit.workspace = true
+nest-permissions.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+anyhow = "1.0"
+
+[[bin]]
+name = "nest"
+path = "src/main.rs"

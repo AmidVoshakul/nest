@@ -1,0 +1,11 @@
+[package]
+name = "nest-permissions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nest-api.workspace = true
+tokio.workspace = true
+serde = { workspace = true, features = ["derive"] }
