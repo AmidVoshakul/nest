@@ -322,3 +322,32 @@ impl MCPClient {
         self.servers.iter().flat_map(|s| &s.tools).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nest_permissions::PermissionEngine;
+
+    #[test]
+    fn test_mcp_client_creation() {
+        let permission_engine = PermissionEngine::new();
+        let client = MCPClient::new(permission_engine);
+        
+        assert!(client.tools().is_empty());
+        assert_eq!(client.request_id_counter, 1);
+    }
+
+    #[test]
+    fn test_mcp_client_add_server() {
+        let permission_engine = PermissionEngine::new();
+        let mut client = MCPClient::new(permission_engine);
+        
+        client.add_server("test-server", "echo test");
+        
+        assert_eq!(client.servers.len(), 1);
+        assert_eq!(client.servers[0].name, "test-server");
+        assert_eq!(client.servers[0].command, "echo test");
+        assert!(client.servers[0].stdin.is_none());
+        assert!(client.servers[0].stdout.is_none());
+    }
+}
