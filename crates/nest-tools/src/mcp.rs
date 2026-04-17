@@ -6,7 +6,7 @@
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+
 use serde_json::{Value, json};
 use nest_api::error::{Result, Error};
 use nest_permissions::PermissionEngine;
@@ -18,11 +18,13 @@ pub struct MCPTool {
     pub input_schema: Value,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MCPServer {
     pub name: String,
     pub command: String,
     pub tools: Vec<MCPTool>,
+    pub stdin: Option<tokio::process::ChildStdin>,
+    pub stdout: Option<BufReader<tokio::process::ChildStdout>>,
 }
 
 #[derive(Debug)]
@@ -30,36 +32,19 @@ pub struct MCPClient {
     permission_engine: PermissionEngine,
     servers: Vec<MCPServer>,
     running_servers: Vec<tokio::process::Child>,
-    tx: mpsc::Sender<MCPRequest>,
+    request_id_counter: u64,
 }
 
-#[derive(Debug)]
-enum MCPRequest {
-    CallTool {
-        agent_id: String,
-        server_name: String,
-        tool_name: String,
-        params: Value,
-    },
-    ListTools,
-}
 
-#[derive(Debug)]
-enum MCPResponse {
-    ToolResult(Value),
-    ToolsList(Vec<MCPTool>),
-    Error(String),
-}
 
 impl MCPClient {
     /// Create a new MCP client
     pub fn new(permission_engine: PermissionEngine) -> Self {
-        let (tx, _) = mpsc::channel(100);
         Self {
             permission_engine,
             servers: Vec::new(),
             running_servers: Vec::new(),
-            tx,
+            request_id_counter: 1,
         }
     }
 
@@ -69,6 +54,8 @@ impl MCPClient {
             name: name.to_string(),
             command: command.to_string(),
             tools: Vec::new(),
+            stdin: None,
+            stdout: None,
         });
     }
 
@@ -197,6 +184,10 @@ impl MCPClient {
         }
 
         self.running_servers.push(child);
+        
+        // Store the stdin/stdout handles for future use
+        self.servers[i].stdin = Some(stdin);
+        self.servers[i].stdout = Some(stdout);
 
         let tools_response: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
@@ -272,27 +263,24 @@ impl MCPClient {
 
     /// Execute actual tool call against MCP server
     async fn execute_tool_call(&mut self, server_idx: usize, tool_name: &str, params: Value) -> Result<Value> {
-        let command = self.servers[server_idx].command.clone();
+        let server = &mut self.servers[server_idx];
         
-        let mut cmd = tokio::process::Command::from(
-            nest_api::subprocess::sandbox_command("sh", &[])
-        );
+        let stdin = server.stdin.as_mut().ok_or_else(|| {
+            Error::Sandbox(format!("MCP server {} not initialized", server.name))
+        })?;
         
-        let mut child = cmd
-            .arg("-c")
-            .arg(&command)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| Error::Sandbox(format!("Failed to start tool server: {}", e)))?;
+        let stdout = server.stdout.as_mut().ok_or_else(|| {
+            Error::Sandbox(format!("MCP server {} not initialized", server.name))
+        })?;
 
-        let mut stdin = child.stdin.take().unwrap();
-        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        // Increment and get unique request ID
+        let request_id = self.request_id_counter;
+        self.request_id_counter += 1;
 
         // Send tools/call request
         let request = json!({
             "jsonrpc": "2.0",
-            "id": 1,
+            "id": request_id,
             "method": "tools/call",
             "params": {
                 "name": tool_name,
@@ -302,16 +290,25 @@ impl MCPClient {
 
         stdin.write_all(serde_json::to_string(&request)?.as_bytes()).await?;
         stdin.write_all(b"\n").await?;
+        stdin.flush().await?;
 
-        // Read response
+        // Read response with timeout
         let mut line = String::new();
-        stdout.read_line(&mut line).await?;
+        
+        match tokio::time::timeout(tokio::time::Duration::from_secs(60), stdout.read_line(&mut line)).await {
+            Ok(Ok(0)) => return Err(Error::Sandbox(format!("MCP server {} disconnected", server.name))),
+            Ok(Err(e)) => return Err(Error::Sandbox(format!("Failed to read from MCP server: {}", e))),
+            Err(_) => return Err(Error::Sandbox(format!("MCP server {} timed out", server.name))),
+            Ok(Ok(_)) => {}
+        }
         
         let response: Value = serde_json::from_str(&line)
             .map_err(|e| Error::Sandbox(format!("Failed to parse tool response: {}", e)))?;
 
-        // Kill the child process
-        let _ = child.kill().await;
+        // Verify response ID matches request ID
+        if response.get("id").and_then(|v| v.as_u64()) != Some(request_id) {
+            return Err(Error::Sandbox(format!("Response ID mismatch: expected {}, got {:?}", request_id, response.get("id"))));
+        }
 
         if let Some(error) = response.get("error") {
             return Err(Error::Sandbox(format!("Tool error: {}", error)));
