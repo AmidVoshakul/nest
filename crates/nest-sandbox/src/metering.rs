@@ -34,6 +34,12 @@ pub struct DualMeter {
     start_time: std::time::Instant,
 }
 
+impl Default for DualMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DualMeter {
     /// Create new dual meter with default configuration
     pub fn new() -> Self {

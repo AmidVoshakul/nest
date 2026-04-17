@@ -1,7 +1,7 @@
 //! SSRF (Server-Side Request Forgery) protection
 
 use crate::error::Result;
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, ToSocketAddrs};
 
 /// Check if an IP address is private or loopback
 pub fn is_private_ip(ip: &IpAddr) -> bool {

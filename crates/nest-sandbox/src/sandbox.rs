@@ -4,7 +4,7 @@ use libc::{self, CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWNET, CLONE_NEWIPC, CLONE_NE
 use std::fs::File;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::process::CommandExt;
+
 use std::os::unix::fs::PermissionsExt;
 use nest_api::error::{Result, Error};
 
@@ -47,7 +47,7 @@ impl Sandbox {
                     // Make root directory private mount
                     libc::mount(
                         std::ptr::null(),
-                        b"/\0".as_ptr() as *const _,
+                        c"/".as_ptr() as *const _,
                         std::ptr::null(),
                         MS_PRIVATE | MS_REC,
                         std::ptr::null(),
@@ -66,9 +66,9 @@ impl Sandbox {
                     let proc_dir = tmp_dir.join("proc");
                     fs::create_dir_all(&proc_dir)?;
                     libc::mount(
-                        b"proc\0".as_ptr() as *const _,
+                        c"proc".as_ptr() as *const _,
                         proc_dir.as_os_str().as_bytes().as_ptr() as *const _,
-                        b"proc\0".as_ptr() as *const _,
+                        c"proc".as_ptr() as *const _,
                         MS_NOEXEC | MS_NOSUID | MS_NODEV,
                         std::ptr::null(),
                     );
@@ -89,10 +89,10 @@ impl Sandbox {
 
                     // Chroot to the new root
                     std::env::set_current_dir("/")?;
-                    libc::chroot(b"/\0".as_ptr() as *const _);
+                    libc::chroot(c"/".as_ptr() as *const _);
 
                     // Unmount old root to complete isolation
-                    libc::umount2(b"/oldroot\0".as_ptr() as *const _, MNT_DETACH);
+                    libc::umount2(c"/oldroot".as_ptr() as *const _, MNT_DETACH);
                     fs::remove_dir_all("/oldroot")?;
 
                     // Apply seccomp filter to allow only basic system calls
