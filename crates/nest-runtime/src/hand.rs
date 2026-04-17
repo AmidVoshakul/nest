@@ -7,14 +7,24 @@ use std::path::PathBuf;
 use nest_tools::MCPProxy;
 use nest_permissions::PermissionEngine;
 use nest_llm::{LlmRegistry, LlmRequest, Message, Role, ToolDefinition};
+use nest_llm::sanitize::ContentSanitizer;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HandManifest {
     pub name: String,
+    
+    #[serde(default)]
     pub version: String,
+    
+    #[serde(default)]
     pub description: String,
+    
+    #[serde(default)]
     pub author: String,
+    
+    #[serde(default)]
+    pub icon: String,
     
     #[serde(default)]
     pub tags: Vec<String>,
@@ -28,6 +38,12 @@ pub struct HandManifest {
     #[serde(default)]
     pub capabilities: HandCapabilities,
 
+    #[serde(default)]
+    pub settings: Vec<HandSetting>,
+
+    #[serde(default)]
+    pub dashboard: HandDashboard,
+
     pub system_prompt: String,
 }
 
@@ -39,6 +55,10 @@ pub struct HandModelConfig {
     pub max_tokens: u32,
     #[serde(default)]
     pub temperature: f32,
+    #[serde(default)]
+    pub max_iterations: u32,
+    #[serde(default)]
+    pub heartbeat_interval_secs: u32,
     #[serde(default)]
     pub api_key_env: Option<String>,
 }
@@ -65,6 +85,36 @@ pub struct HandCapabilities {
     pub memory_write: Vec<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HandSetting {
+    pub key: String,
+    pub label: String,
+    pub description: String,
+    pub setting_type: String,
+    pub default: String,
+    #[serde(default)]
+    pub options: Vec<HandSettingOption>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HandSettingOption {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct HandDashboard {
+    #[serde(default)]
+    pub metrics: Vec<HandDashboardMetric>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HandDashboardMetric {
+    pub label: String,
+    pub memory_key: String,
+    pub format: String,
+}
+
 fn default_max_tokens_per_hour() -> u32 { 150000 }
 fn default_memory_limit() -> u32 { 512 }
 fn default_cpu_limit() -> u32 { 50 }
@@ -78,6 +128,7 @@ pub struct Hand {
     conversation_history: Vec<Message>,
     task_queue: VecDeque<String>,
     loop_guard: super::LoopGuard,
+    depth_guard: super::DepthGuard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +161,7 @@ impl Hand {
             conversation_history: Vec::new(),
             task_queue: VecDeque::new(),
             loop_guard: super::LoopGuard::new(),
+            depth_guard: super::DepthGuard::new(),
         })
     }
 
@@ -135,8 +187,9 @@ impl Hand {
     }
 
     pub async fn think_cycle(&mut self) -> anyhow::Result<()> {
-        // Reset loop guard at start of each think cycle
+        // Reset guards at start of each think cycle
         self.loop_guard.reset();
+        self.depth_guard.reset();
         
         // Process pending tasks from queue
         eprintln!("🧠 [{}] Think cycle started, queue size: {}", self.manifest.name, self.task_queue.len());
@@ -240,6 +293,21 @@ impl Hand {
                     }
                 }
                 
+                // Check depth guard
+                if self.depth_guard.would_exceed() {
+                    eprintln!("[{}] 🚫 Maximum tool call depth exceeded", self.manifest.name);
+                    self.conversation_history.push(Message {
+                        role: Role::Tool,
+                        content: format!("Error: Maximum tool call depth exceeded. Recursion depth limit reached."),
+                        tool_calls: Vec::new(),
+                        tool_call_id: Some(call.id.clone()),
+                    });
+                    continue;
+                }
+                
+                // Enter depth level
+                let _ = self.depth_guard.enter();
+                
                 let result = self.mcp_proxy.call_tool(
                     &self.manifest.name,
                     &call.name,
@@ -250,6 +318,16 @@ impl Hand {
                     Ok(v) => serde_json::to_string(&v).unwrap_or_else(|_| "Error serializing result".into()),
                     Err(e) => format!("Error: {}", e),
                 };
+                
+                // Sanitize tool output for indirect prompt injection
+                let sanitizer = ContentSanitizer::new();
+                let (sanitized_content, result) = sanitizer.sanitize(&content);
+                
+                if result == nest_llm::sanitize::SanitizationResult::InjectionDetected {
+                    eprintln!("[{}] ⚠️  Detected indirect prompt injection in tool output, sanitized", self.manifest.name);
+                }
+                
+                let content = sanitized_content;
 
                 self.conversation_history.push(Message {
                     role: Role::Tool,
