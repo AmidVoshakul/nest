@@ -274,7 +274,11 @@ impl MCPClient {
     async fn execute_tool_call(&mut self, server_idx: usize, tool_name: &str, params: Value) -> Result<Value> {
         let command = self.servers[server_idx].command.clone();
         
-        let mut child = tokio::process::Command::new("sh")
+        let mut cmd = tokio::process::Command::from(
+            nest_api::subprocess::sandbox_command("sh", &[])
+        );
+        
+        let mut child = cmd
             .arg("-c")
             .arg(&command)
             .stdin(std::process::Stdio::piped())

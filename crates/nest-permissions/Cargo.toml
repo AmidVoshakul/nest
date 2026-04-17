@@ -8,3 +8,4 @@ description = "Permission engine for Nest agent hypervisor"
 
 [dependencies]
 nest-api.workspace = true
+wildmatch = { workspace = true }

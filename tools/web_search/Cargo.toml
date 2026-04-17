@@ -11,3 +11,4 @@ serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "io-util", "net", "io-std"] }
 anyhow = "1.0"
+nest-api = { path = "../../crates/nest-api" }

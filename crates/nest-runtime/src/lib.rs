@@ -4,9 +4,13 @@
 
 pub mod hand;
 pub mod scheduler;
+pub mod loop_guard;
+pub mod depth_guard;
 
 pub use hand::{Hand, HandManifest, HandState};
 pub use scheduler::Scheduler;
+pub use loop_guard::{LoopGuard, LoopGuardConfig, LoopGuardVerdict};
+pub use depth_guard::{DepthGuard, DepthGuardConfig};
 
 use nest_api::AgentState;
 use nest_api::error::Result;

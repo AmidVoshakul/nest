@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use nest_api::ssrf::validate_url;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MCPRequest {
@@ -168,13 +169,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn fetch_url(url: &str) -> Result<String, String> {
-    // Basic SSRF protection
-    if url.starts_with("file://") 
-        || url.contains("localhost") 
-        || url.contains("127.0.0.1")
-        || url.contains("169.254.169.254") {
-        return Err("SSRF protection: URL not allowed".into());
-    }
+    // Full SSRF protection with DNS rebinding defense
+    validate_url(url).map_err(|e| e.to_string())?;
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
