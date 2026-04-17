@@ -32,6 +32,7 @@ pub struct MCPClient {
     permission_engine: PermissionEngine,
     servers: Vec<MCPServer>,
     running_servers: Vec<tokio::process::Child>,
+    request_id_counter: u64,
 }
 
 
@@ -43,6 +44,7 @@ impl MCPClient {
             permission_engine,
             servers: Vec::new(),
             running_servers: Vec::new(),
+            request_id_counter: 1,
         }
     }
 
@@ -271,10 +273,14 @@ impl MCPClient {
             Error::Sandbox(format!("MCP server {} not initialized", server.name))
         })?;
 
+        // Increment and get unique request ID
+        let request_id = self.request_id_counter;
+        self.request_id_counter += 1;
+
         // Send tools/call request
         let request = json!({
             "jsonrpc": "2.0",
-            "id": 1,
+            "id": request_id,
             "method": "tools/call",
             "params": {
                 "name": tool_name,
@@ -286,12 +292,23 @@ impl MCPClient {
         stdin.write_all(b"\n").await?;
         stdin.flush().await?;
 
-        // Read response
+        // Read response with timeout
         let mut line = String::new();
-        stdout.read_line(&mut line).await?;
+        
+        match tokio::time::timeout(tokio::time::Duration::from_secs(60), stdout.read_line(&mut line)).await {
+            Ok(Ok(0)) => return Err(Error::Sandbox(format!("MCP server {} disconnected", server.name))),
+            Ok(Err(e)) => return Err(Error::Sandbox(format!("Failed to read from MCP server: {}", e))),
+            Err(_) => return Err(Error::Sandbox(format!("MCP server {} timed out", server.name))),
+            Ok(Ok(_)) => {}
+        }
         
         let response: Value = serde_json::from_str(&line)
             .map_err(|e| Error::Sandbox(format!("Failed to parse tool response: {}", e)))?;
+
+        // Verify response ID matches request ID
+        if response.get("id").and_then(|v| v.as_u64()) != Some(request_id) {
+            return Err(Error::Sandbox(format!("Response ID mismatch: expected {}, got {:?}", request_id, response.get("id"))));
+        }
 
         if let Some(error) = response.get("error") {
             return Err(Error::Sandbox(format!("Tool error: {}", error)));
