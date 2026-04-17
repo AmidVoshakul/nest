@@ -11,6 +11,10 @@
 //! - Rate limiting per agent
 //! - No implicit permissions
 
+pub mod repair;
+pub mod sanitize;
+pub mod prompt_hash;
+
 use std::{collections::HashMap, time::Duration};
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
@@ -42,6 +46,13 @@ pub enum Provider {
     Anthropic,
     OpenAI,
     OpenRouter,
+    Zai,
+    Gemini,
+    Ollama,
+    Deepseek,
+    Mistral,
+    Groq,
+    Together,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,12 +155,32 @@ impl LlmClient {
                 .map_err(|_| LlmError::ApiKeyNotFound("openai".into()))?,
             Provider::OpenRouter => std::env::var("OPENROUTER_API_KEY")
                 .map_err(|_| LlmError::ApiKeyNotFound("openrouter".into()))?,
+            Provider::Zai => std::env::var("ZAI_API_KEY")
+                .map_err(|_| LlmError::ApiKeyNotFound("zai".into()))?,
+            Provider::Gemini => std::env::var("GOOGLE_API_KEY")
+                .map_err(|_| LlmError::ApiKeyNotFound("gemini".into()))?,
+            Provider::Ollama => "".into(), // Ollama doesn't require API key
+            Provider::Deepseek => std::env::var("DEEPSEEK_API_KEY")
+                .map_err(|_| LlmError::ApiKeyNotFound("deepseek".into()))?,
+            Provider::Mistral => std::env::var("MISTRAL_API_KEY")
+                .map_err(|_| LlmError::ApiKeyNotFound("mistral".into()))?,
+            Provider::Groq => std::env::var("GROQ_API_KEY")
+                .map_err(|_| LlmError::ApiKeyNotFound("groq".into()))?,
+            Provider::Together => std::env::var("TOGETHER_API_KEY")
+                .map_err(|_| LlmError::ApiKeyNotFound("together".into()))?,
         };
 
         let base_url = match provider {
             Provider::Anthropic => "https://api.anthropic.com/v1".into(),
             Provider::OpenAI => "https://api.openai.com/v1".into(),
             Provider::OpenRouter => "https://openrouter.ai/api/v1".into(),
+            Provider::Zai => "https://api.z.ai/v1".into(),
+            Provider::Gemini => "https://generativelanguage.googleapis.com/v1beta".into(),
+            Provider::Ollama => "http://localhost:11434/v1".into(),
+            Provider::Deepseek => "https://api.deepseek.com/v1".into(),
+            Provider::Mistral => "https://api.mistral.ai/v1".into(),
+            Provider::Groq => "https://api.groq.com/openai/v1".into(),
+            Provider::Together => "https://api.together.xyz/v1".into(),
         };
 
         let client = reqwest::Client::builder()
@@ -176,6 +207,13 @@ impl LlmClient {
             Provider::Anthropic => "claude-3-5-sonnet-20240620",
             Provider::OpenAI => "gpt-4o",
             Provider::OpenRouter => "anthropic/claude-3.5-sonnet",
+            Provider::Zai => "zai-3",
+            Provider::Gemini => "gemini-2.0-flash",
+            Provider::Ollama => "llama3",
+            Provider::Deepseek => "deepseek-chat",
+            Provider::Mistral => "mistral-large-latest",
+            Provider::Groq => "llama-3.1-70b-versatile",
+            Provider::Together => "meta-llama/Llama-3.1-70B-Instruct-Turbo",
         }
     }
 
@@ -185,6 +223,13 @@ impl LlmClient {
             "anthropic" | "claude" => Provider::Anthropic,
             "openai" | "gpt" => Provider::OpenAI,
             "openrouter" => Provider::OpenRouter,
+            "zai" | "z.ai" => Provider::Zai,
+            "gemini" | "google" => Provider::Gemini,
+            "ollama" | "local" => Provider::Ollama,
+            "deepseek" => Provider::Deepseek,
+            "mistral" => Provider::Mistral,
+            "groq" => Provider::Groq,
+            "together" => Provider::Together,
             "default" => Provider::OpenRouter, // Default to OpenRouter which has free models
             _ => return Err(LlmError::UnsupportedProvider(name.into())),
         };
@@ -230,6 +275,13 @@ impl LlmClient {
             Provider::Anthropic => self.call_anthropic(request).await?,
             Provider::OpenAI => self.call_openai(request).await?,
             Provider::OpenRouter => self.call_openrouter(request).await?,
+            Provider::Zai => self.call_openai(request).await?,
+            Provider::Gemini => self.call_openai(request).await?,
+            Provider::Ollama => self.call_openai(request).await?,
+            Provider::Deepseek => self.call_openai(request).await?,
+            Provider::Mistral => self.call_openai(request).await?,
+            Provider::Groq => self.call_openai(request).await?,
+            Provider::Together => self.call_openai(request).await?,
         };
 
         // Update usage tracking
