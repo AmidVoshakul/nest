@@ -13,6 +13,8 @@ pub struct PermissionEngine {
     grants: HashMap<String, HashSet<(Permission, Option<String>)>>,
     /// Pending permission requests waiting for user approval
     pending_requests: Vec<PendingRequest>,
+    /// Auto-approve all permissions for testing
+    auto_approve: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +39,11 @@ impl PermissionEngine {
         permission: Permission,
         resource: Option<&str>,
     ) -> PermissionResult {
+        // Auto-approve for testing
+        if self.auto_approve {
+            return PermissionResult::Allowed;
+        }
+
         // Default deny policy
         let grants = match self.grants.get(agent_id) {
             Some(g) => g,
@@ -113,6 +120,11 @@ impl PermissionEngine {
         } else {
             false
         }
+    }
+
+    /// Set auto-approve mode (for testing only)
+    pub fn set_auto_approve(&mut self, enabled: bool) {
+        self.auto_approve = enabled;
     }
 }
 
