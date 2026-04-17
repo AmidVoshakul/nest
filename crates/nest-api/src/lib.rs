@@ -17,6 +17,10 @@ pub mod path;
 pub mod ssrf;
 pub mod subprocess;
 pub mod taint;
+pub mod signing;
+pub mod ratelimit;
+pub mod constant_time;
+pub mod jitter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AgentState {

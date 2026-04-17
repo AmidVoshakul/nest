@@ -6,9 +6,11 @@
 
 mod sandbox;
 pub mod metering;
+pub mod hardening;
 
 use std::path::PathBuf;
 pub use metering::{DualMeter, MeteringConfig};
+pub use hardening::*;
 
 pub use sandbox::Sandbox;
 

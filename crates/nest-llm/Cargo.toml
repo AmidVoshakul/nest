@@ -28,3 +28,4 @@ dotenvy = "0.15"
 
 # Security
 zeroize = { workspace = true }
+sha2 = { workspace = true }
