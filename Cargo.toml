@@ -70,6 +70,7 @@ dotenvy = "0.15"
 libc = "0.2"
 nest-runtime = { version = "0.1.0", path = "crates/nest-runtime" }
 nest-tools = { version = "0.1.0", path = "crates/nest-tools" }
+nest-llm = { version = "0.1.0", path = "crates/nest-llm" }
 
 [[bin]]
 name = "nest"

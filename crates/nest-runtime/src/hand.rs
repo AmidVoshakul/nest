@@ -230,7 +230,8 @@ impl Hand {
 
         // Use default model if not specified
         let model = if self.manifest.model.model == "default" {
-            client.default_model().to_string()
+            std::env::var("NEST_DEFAULT_MODEL")
+                .unwrap_or_else(|_| client.default_model().to_string())
         } else {
             self.manifest.model.model.clone()
         };

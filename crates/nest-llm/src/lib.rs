@@ -14,6 +14,7 @@
 pub mod repair;
 pub mod sanitize;
 pub mod prompt_hash;
+pub mod model_catalog;
 
 use std::{collections::HashMap, time::Duration};
 use serde::{Serialize, Deserialize};
@@ -41,7 +42,7 @@ pub enum LlmError {
     InvalidResponse(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Copy)]
 pub enum Provider {
     Anthropic,
     OpenAI,
@@ -146,6 +147,10 @@ pub struct LlmClient {
 }
 
 impl LlmClient {
+    /// Get the provider for this client
+    pub fn provider(&self) -> Provider {
+        self.provider
+    }
     /// Create new LLM client for specified provider
     pub fn new(provider: Provider) -> Result<Self, LlmError> {
         let api_key = match provider {
