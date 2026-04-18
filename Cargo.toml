@@ -8,6 +8,7 @@ description = "Secure hypervisor for autonomous AI agents"
 repository = "https://github.com/AmidVoshakul/nest"
 keywords = ["ai", "agent", "sandbox", "security", "hypervisor"]
 categories = ["command-line-utilities", "security", "virtualization"]
+default-run = "nest"
 
 [workspace]
 members = ["crates/nest-api", "crates/nest-sandbox", "crates/nest-messaging", "crates/nest-audit", "crates/nest-permissions", "crates/nest-tools", "crates/nest-runtime", "crates/nest-llm"]

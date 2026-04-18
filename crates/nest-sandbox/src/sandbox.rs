@@ -9,6 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use nest_api::error::{Result, Error};
 
 /// Sandbox implementation using Linux namespaces
+#[allow(dead_code)] // Reserved fields for future sandbox capabilities
 pub struct Sandbox {
     config: super::SandboxConfig,
     pid: Option<u32>,

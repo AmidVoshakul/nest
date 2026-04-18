@@ -2,7 +2,6 @@
 
 use nest_tools::MCPClient;
 use nest_permissions::PermissionEngine;
-use serde_json::json;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

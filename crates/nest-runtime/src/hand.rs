@@ -121,7 +121,6 @@ fn default_cpu_limit() -> u32 { 50 }
 
 pub struct Hand {
     manifest: HandManifest,
-    permission_engine: PermissionEngine,
     mcp_proxy: MCPProxy,
     state: HandState,
     llm_registry: LlmRegistry,
@@ -149,12 +148,11 @@ impl Hand {
         let manifest: HandManifest = toml::from_str(&content)?;
         
         let permission_engine = PermissionEngine::new();
-        let mcp_proxy = MCPProxy::new(permission_engine.clone());
+        let mcp_proxy = MCPProxy::new(permission_engine);
         let llm_registry = LlmRegistry::new();
         
         Ok(Self {
             manifest,
-            permission_engine,
             mcp_proxy,
             state: HandState::Stopped,
             llm_registry,
@@ -280,7 +278,7 @@ impl Hand {
                         eprintln!("[{}] 🚫 Blocked repeated call to tool '{}'", self.manifest.name, call.name);
                         self.conversation_history.push(Message {
                             role: Role::Tool,
-                            content: format!("Error: Tool call blocked due to repeated execution. You seem to be in a loop."),
+                            content: "Error: Tool call blocked due to repeated execution. You seem to be in a loop.".to_string(),
                             tool_calls: Vec::new(),
                             tool_call_id: Some(call.id.clone()),
                         });
@@ -298,7 +296,7 @@ impl Hand {
                     eprintln!("[{}] 🚫 Maximum tool call depth exceeded", self.manifest.name);
                     self.conversation_history.push(Message {
                         role: Role::Tool,
-                        content: format!("Error: Maximum tool call depth exceeded. Recursion depth limit reached."),
+                        content: "Error: Maximum tool call depth exceeded. Recursion depth limit reached.".to_string(),
                         tool_calls: Vec::new(),
                         tool_call_id: Some(call.id.clone()),
                     });

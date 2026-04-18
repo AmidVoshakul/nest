@@ -22,7 +22,6 @@ use std::collections::HashMap;
 
 pub struct AgentRuntime {
     message_bus: MessageBus,
-    permission_engine: PermissionEngine,
     mcp_proxy: MCPProxy,
     agents: HashMap<String, AgentState>,
     hands: HashMap<String, hand::Hand>,
@@ -35,8 +34,7 @@ impl AgentRuntime {
         let permission_engine = PermissionEngine::new();
         Self {
             message_bus: MessageBus::new(),
-            mcp_proxy: MCPProxy::new(permission_engine.clone()),
-            permission_engine,
+            mcp_proxy: MCPProxy::new(permission_engine),
             agents: HashMap::new(),
             hands: HashMap::new(),
             scheduler: scheduler::Scheduler::new(),
@@ -207,5 +205,11 @@ impl AgentRuntime {
     /// Get all scheduled tasks
     pub fn scheduled_tasks(&self) -> &std::collections::HashMap<String, nest_api::scheduler::ScheduledTask> {
         self.scheduler.tasks()
+    }
+}
+
+impl Default for AgentRuntime {
+    fn default() -> Self {
+        Self::new()
     }
 }
