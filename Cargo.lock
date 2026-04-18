@@ -978,6 +978,7 @@ dependencies = [
  "libc",
  "nest-api",
  "nest-audit",
+ "nest-llm",
  "nest-messaging",
  "nest-permissions",
  "nest-runtime",
